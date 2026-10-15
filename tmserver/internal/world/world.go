@@ -518,7 +518,9 @@ func (w *World) ApplyDeliveries(s *Session, pending []Delivery, then func(*World
 	p := w.persist
 	s.Mode = UserWaitDB
 	w.Go(s, func() func(*World, *Session) {
-		err := p.SaveCargoWithDeliveries(context.Background(), cs, deliveredIDs, nil)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		err := p.SaveCargoWithDeliveries(ctx, cs, deliveredIDs, nil)
 		return func(w *World, s *Session) {
 			if s == nil {
 				return
