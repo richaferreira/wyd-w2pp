@@ -269,3 +269,4 @@ ModelManifest.xml
 # Generated proprietary client-derived item icons. Publish these artifacts;
 # never commit the pixels.
 /dist/item-icons/
+\n# Local secrets (retain checked-in examples)\n.env\n.env.*\n!.env.example\n!.env.*.example\n
