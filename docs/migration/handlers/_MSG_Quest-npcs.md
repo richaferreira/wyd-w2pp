@@ -1,0 +1,235 @@
+# `_MSG_Quest` (0x028B) — enumeração dos NPCs de quest
+
+> Detalha o handler de interação com NPC de quest (resumo em
+> [lote2-quest-ranking-cash.md](lote2-quest-ranking-cash.md)). Fonte:
+> `Source/Code/TMSrv/_MSG_Quest.cpp` (2753 linhas). Linhas conferidas via `#pragma region`/`case`.
+
+## Despacho (NPC → `npcMode`)
+- **Entrada:** `MSG_STANDARDPARM2` — `Parm1 = npcIndex` (o NPC), `Parm2 = confirm` (0 = "perguntar",
+  ≠0 = "confirmar/executar").
+- **Pré:** `npcIndex` em `[MAX_USER, MAX_MOB)`; cancela trade/autotrade.
+- **Resolução do tipo (`:50-160`):** o "tipo de NPC" vem de **`MOB.Merchant`** e, quando
+  `Merchant==100`, do **grade** do item equipado no NPC
+  (`BASE_GetItemAbilityNosanc(Equip[0], EF_GRADE0)`). Se `npcMode` continua `-1` → `return`.
+  Depois entra num `switch(npcMode)`.
+
+| Merchant | Grade | `npcMode` | Linha case | Propósito |
+|---------:|------:|-----------|-----------:|-----------|
+| 100 | 0 | `QUEST_COVEIRO` | 293 | Quest Arch 256 — etapa 1 (lvl 39–115) |
+| 100 | 1 | `QUEST_JARDINEIRO` | 338 | Quest Arch 256 — etapa 2 (lvl 115–190) |
+| 100 | 2 | `QUEST_KAIZEN` | 382 | Quest Arch 256 — etapa 3 (lvl 190–265) |
+| 100 | 3 | `QUEST_HIDRA` | 426 | Quest Arch 256 — etapa 4 (lvl 265–320) |
+| 100 | 4 | `QUEST_ELFOS` | 470 | Quest Arch 256 — etapa 5 |
+| 100 | 5 | `LIDER_APRENDIZ` | 2625 | líder aprendiz (sub-quest/promoção) |
+| 100 | 7/8/9 | `PERZEN` | 2398 | NPC Perzen |
+| 100 | 13 | `QUEST_CAPAREAL` | 2342 | quest capa real |
+| 100 | 14 | `CAPAVERDE_TELEPORT` | 2167 | teleporte (capa verde) |
+| 100 | 15 | `MOLARGARGULA` | 2236 | quest "molar gárgula" (flag Mortal) |
+| 100 | 16 | `TREINADORNEWBIE4` | 2046 | tutorial novato 4 |
+| 100 | 22 | `SOBREVIVENTE` | 2597 | NPC sobrevivente — troca implementada (#325) |
+| 100 | 30 | `GUARDA_REAL_EVT1` | 2664 | guarda real (evento) |
+| 72 | — | `UXMAL` | 1313 | NPC Uxmal — inscrição na Pista de Runas (#355) |
+| 36 | — | `TREINADORNEWBIE1` | 1895 | tutorial novato 1 |
+| 40 | — | `TREINADORNEWBIE2` | 1938 | tutorial novato 2 |
+| 41 | — | `TREINADORNEWBIE3` | 1992 | tutorial novato 3 |
+| 8 | — | `CAPAVERDE_TRADE` | 2188 | trade (capa verde) |
+| 78 | — | `BLACKORACLE` | 2257 | oráculo negro |
+| 120 | — | `CARBUNCLE_WIND` | 2364 | carbúnculo (vento) |
+| 4 | — | `GOLD_DRAGON` | 1471 | dragão dourado |
+| 10 | — | `AMU_MISTICO` | 253 | quest "Terra Mística" (flag Mortal; exige party) |
+| 11 | — | `EXPLOIT_LEADER` | 1626 | líder (exploit/evento) |
+| 12 | — | `JEFFI` | 514 | NPC Jeffi |
+| 13 | — | `SHAMA` | 612 | NPC Shama |
+| 14 / 15 | — | `KING` | 693 | NPC rei |
+| 19 | — | `COMP_SEPHI` | 2102 | composição Sephi |
+| 26 | — | `KINGDOM` | 1127 | kingdom broker |
+| 30 | — | `ZAKUM` | 238 | info da quest Zakum (ocupação da área) |
+| 31 | — | `MESTREHAB` | 1745 | mestre de habilidade |
+| 68 | — | `GODGOVERNMENT` | 2565 | governo (god government) |
+| 58 | — | `MOUNT_MASTER` | 170 | curar/ressuscitar montaria (`Equip[14]`) |
+| 62 | — | `ARZAN_DRAGON` | 1397 | dragão de Arzan |
+| 76 | — | `URNAMMU` | 1247 | NPC Urnammu |
+| 74 | — | `KIBITA` | 2430 | cidadania, buff condicional e Soul permanente |
+| 200 | — | `CURANDEIRO` | 2717 | curandeiro |
+
+> **Total:** 38 tipos de NPC → 36 blocos `case`/`#pragma region` (KING cobre Merchant 14 e 15).
+
+## Padrão comum de quest (vale para a maioria dos `case`)
+1. **Pré-condições:** classe (`extra.ClassMaster` MORTAL/ARCH/CELESTIAL…), **faixa de nível**
+   (min/max), flags de quest em `extra.QuestInfo` (Mortal/Arch/Celestial) e/ou itens no inventário.
+2. **`confirm == 0`** → `SendSay(npcIndex, ...)`: o NPC **pergunta/explica** (preço, item exigido,
+   etc.). Sem efeito de estado.
+3. **`confirm != 0`** → **executa**: consome item/coin, concede recompensa (item/exp/teleporte),
+   e **grava a flag de progresso** (`extra.QuestInfo.*` ou `pMob[conn].QuestFlag`). Loga.
+
+## Detalhe — cadeia "Quest 256" (Arch) — `COVEIRO → JARDINEIRO → KAIZEN → HIDRA → ELFOS`
+Etapas sequenciais de progressão de nível (rumo ao cap 256/Arch). Cada NPC:
+- exige `ClassMaster ∈ {MORTAL, ARCH}` (senão `_NN_Level_Limit2`);
+- exige **faixa de nível** específica (senão `_NN_Level_limit`);
+- consome um **ticket** (item por etapa) do inventário (senão "traga o item X");
+- seta `pMob[conn].QuestFlag` e **teleporta** o jogador para a área da prova (jitter `rand()%5-3`).
+
+| Etapa | NPC (grade) | Faixa de nível | Ticket (`sIndex`) | `QuestFlag` | Teleporte (aprox.) |
+|------:|-------------|----------------|------------------:|------------:|--------------------|
+| 1 | COVEIRO (0) ✅ | 39 – 115 | 4038 | 1 | (2398, 2105) |
+| 2 | JARDINEIRO (1) ✅ | 115 – 190 | 4039 | 2 | (2234, 1714) |
+| 3 | KAIZEN (2) ✅ | 190 – 265 | 4040 | 3 | (464, 3902) |
+| 4 | HIDRA (3) ✅ | 265 – 320 | 4041 | 4 | (668, 3756) |
+| 5 | ELFOS (4) ✅ | 320 – 350 | 4042 | 5 | (1322, 4041) |
+
+> **Nomes in-game** (a fonte legada só usa os apelidos internos acima; estes são os nomes que o
+> cliente mostra na tooltip do ticket, levantados nas issues #261/#263/#264/#265):
+> 1 Coveiro = *Defensor da Alma* · 3 Kaizen = *Ressureição do Cavaleiro Negro* (NPC "Patrulha", na
+> Dungeon Negro) · 4 Hidra = *Hidra Imortal* (mesmo NPC "Patrulha") · 5 Elfos =
+> *Início da Infelicidade* (NPC "Guarda", no Submundo).
+>
+> A tooltip mostra a faixa **1-based** (ex.: "Mortal 321~350" para o passo 5), enquanto a checagem
+> legada usa o nível armazenado 0-based `[min, max)` — por isso os títulos das issues citam o limite
+> superior +1. Os valores da tabela são os do `_MSG_Quest.cpp`, e batem com a tooltip.
+
+## Exemplos de NPCs não-cadeia (amostra detalhada)
+- **`MOUNT_MASTER` (Merchant 58, `:170`):** cura/ressuscita a montaria (`Equip[14]`, `sIndex`
+  2330–2390). `confirm==0` mostra preço (`g_pItemList[mount].Price`); `confirm!=0` cobra gold e, por
+  RNG (`vit -= rand()%3`), restaura a vitalidade do mount **ou** o destrói (`memset`). Recalcula score.
+- **`ZAKUM` (Merchant 30, `:238`):** apenas **informa** quem está na área da quest Zakum
+  (`GetUserInArea(2180,1160,2296,1270)`); sem efeito.
+- **`AMU_MISTICO` (Merchant 10, `:253`):** quest "Terra Mística" — exige `ClassMaster==MORTAL`, flag
+  `QuestInfo.Mortal.TerraMistica==0` e estar **em party**; ao confirmar seta
+  `QuestInfo.Mortal.TerraMistica = 1`.
+- **`TREINADORNEWBIE1..4`, `CAPAVERDE_*`, `KING`, `KINGDOM`, `CURANDEIRO`, traders/info:** NPCs de
+  tutorial/teleporte/troca/serviço — mesmo padrão (perguntar/confirmar), efeitos pontuais
+  (teleporte, item inicial, cura, troca). Passo-a-passo fino: abrir a linha do `case` indicada na
+  tabela de despacho.
+
+## Detalhe — `KIBITA` (Merchant 74)
+
+O `case KIBITA` (`_MSG_Quest.cpp:2430-2562`) ignora `confirm` e avalia três serviços nesta ordem:
+
+1. **Cidadania:** se `Citizen==0` e há pelo menos 4.000.000 de gold, cobra o valor, define
+   `Citizen=ServerIndex+1`, atualiza a cidadania da guilda quando o jogador é líder e encerra o case.
+2. **Buff temporário:** existe somente sob `#ifdef KIBITA_SOUL` (não há definição desse macro na
+   árvore versionada). Em dias úteis, às 21h, Mortal abaixo do nível 369 entrega o item 420, recebe
+   affect 29 por `AFFECT_1H` e é teleportado para perto de `(2454,1843)`.
+3. **Soul permanente ✅:** Mortal com `CurrentScore.Level>=369` e sem o bit 30 de `LearnedSkill`
+   entrega a Pedra Secreta da classe. O slot é limpo integralmente, o bit 30 é ativado, `Equip[15]`
+   é substituído pela capa do reino e `CharLogOut` força o reload antes de `_MSG_SendArchEffect`.
+
+| Classe (`MOB.Class`) | Pedra Secreta | Item |
+|---------------------:|----------------|-----:|
+| 0 — TransKnight | Água | 5334 |
+| 1 — Foema | Sol | 5336 |
+| 2 — Beastmaster | Terra | 5335 |
+| 3 — Huntress | Vento | 5337 |
+
+| Reino (`MOB.Clan`) | Capa (`Equip[15]`) |
+|--------------------:|-------------------:|
+| 7 — Hekalotia | 3194 |
+| 8 — Akelonia | 3195 |
+| qualquer outro | 3196 |
+
+O bit 30 é uma flag permanente de progressão. Este ramo não escreve `STRUCT_MOBEXTRA.Soul`; esse
+campo elemental é outro conceito, consumido pelo affect 29. No servidor Go somente o terceiro ramo
+está implementado; cidadania e o bloco condicional continuam pendentes.
+
+## Notas de migração
+- **Estado de quest** mora em `STRUCT_MOBEXTRA.QuestInfo` (Mortal/Arch/Celestial, Fase 2 §1.5) e em
+  `pMob[conn].QuestFlag` (estado volátil da etapa atual) — mapear cada flag no schema novo.
+- **Tudo hardcoded:** faixas de nível, `sIndex` de tickets/recompensas, coordenadas de teleporte e o
+  mapeamento Merchant/grade→quest. Forte candidato a **conteúdo data-driven** (ex.: tabela
+  `quest`/`quest_step` ou scripts) — alinha com o gap apontado na comparação de projetos
+  (open-wyd-scripts) e em game-rules (Fase 4).
+- **Identificação do NPC por `Merchant` + `EF_GRADE0` do item equipado** é um quirk a preservar na
+  leitura dos dados de NPC (Fase 2 — `NPCGener`/BaseMob) durante a migração.
+- **Grade 0 é ambíguo — e isso é legado, não bug.** `BASE_GetItemAbilityNosanc` (`:34`) devolve `0`
+  quando o `Equip[0]` não tem efeito `EF_GRADE0`, então templates Merchant-100 sem esse efeito
+  (`FirstTrainer`, `Guarda_`, `Treinador1` em `Release/TMsrv/run/npc/`) caem em `QUEST_COVEIRO`
+  junto com o Coveiro (que tem `EF_GRADE0 0` explícito). A porta do grade 0 no Go reproduz isso de
+  propósito; desambiguar quebraria a paridade.
+- **UNVERIFIED (passo-a-passo fino):** recompensas/etapas internas exatas dos blocos longos
+  (`JEFFI`, `SHAMA`, `KING`, `KINGDOM`, `URNAMMU`, `ARZAN_DRAGON`, `GOLD_DRAGON`, `EXPLOIT_LEADER`,
+  `MESTREHAB`, `GODGOVERNMENT`) — o **despacho e o propósito** estão mapeados; abrir a linha
+  do `case` ao implementar cada um.
+
+> **Status:** todos os **38 tipos de NPC / 36 `case`** mapeados (gatilho Merchant/grade → modo →
+> propósito → linha) + a cadeia Arch detalhada. Enumeração da Fase 5 concluída.
+
+## Sobrevivente — Hall de Kefra (#325)
+
+O NPC `MOB.Merchant=100`, `EF_GRADE0=22` converte o primeiro item **4127**
+(Pergaminho Selado) nos slots acessíveis do inventário em **100 acessos** ao Hall
+(o valor legado; cada servidor ajusta com `-kefra-entries-per-scroll` /
+`W2PP_KEFRA_ENTRIES_PER_SCROLL`, #343).
+A interação é imediata, tanto com `confirm=0` quanto com `confirm!=0`, e limpa
+inteiramente o slot selecionado, conforme `_MSG_Quest.cpp:2598-2623`. Não exige
+espaço livre. Se a soma exceder `int32`, nada muda.
+O servidor envia o slot vazio e a mensagem `_DN_CHANGE_COUNT` (420) com o saldo.
+
+**Desvio intencional (#343):** sem pergaminho acessível, o legado fica em silêncio;
+o Go responde com `_DN_CHANGE_COUNT` e o saldo atual (inclusive 0), para o jogador
+consultar os acessos restantes no próprio NPC.
+
+A mensagem sai como no `SendClientMessage` (`SendFunc.cpp:27-43`): `MSG_MessagePanel`
+com `HEADER.ID` 0 e o texto em Windows-1252. O cliente 7662 descarta o painel com
+outro ID (`TMScene.cpp:1371`), e até o #343 o saldo nunca aparecia na tela. A mesma
+correção vale para o saldo do Pesadelo (`/nt` e a troca de entradas), que usa a
+mesma string.
+
+O template real `npc/Sobrevivente` tem `MOB.Merchant=100` no byte 17, mas
+`CurrentScore.Merchant=68` (o valor exposto por `Entity.Merchant`). O despacho
+aceita o discriminador legado do template e também `Entity.Merchant=100`, sempre
+com grade 22, sem alterar os dados enviados ao cliente.
+
+O saldo é individual por personagem e acompanha inventário e atributos no
+salvamento normal. A entrada no Hall usa o bloco `(2364,3892)` (coordenadas
+arredondadas para múltiplos de quatro), exige saldo positivo e desconta um acesso.
+O destino é `(2364+rand()%3,3906+rand()%3)`, com duas chamadas ao RNG MSVC, X antes
+de Y (`GetFunc.cpp:994-1004`). Uma tentativa sem saldo não consome RNG nem teleporta.
+Outras rotas e o ciclo de vida do boss Kefra não fazem parte desta implementação.
+
+## Uxmal — Pista de Runas (#355)
+
+O template `npc/Uxmal` tem `MOB.Merchant=72` no byte 17, mas
+`CurrentScore.Merchant=104` (o valor de `Entity.Merchant`, que também aparece
+nos treinadores). Por isso o despacho usa só o byte 17 (`isUxmalNPC`).
+
+**Inscrição** (`_MSG_Quest.cpp:1313-1395`, `handler/runequest.go`). As
+verificações seguem a ordem do legado e cada recusa envia uma mensagem de
+`Language.txt`:
+
+1. Só aceita nos minutos 16–19, 36–39 e 56–59. Fora disso: "Quest em progresso.".
+2. Só aceita líder de grupo ou jogador solo.
+3. Procura o primeiro slot do inventário com a Pista da Runas (5134). A sala é a
+   sanc da pista, limitada a 6.
+4. A sala 0 tem 2 vagas e as demais têm 3. Sala cheia: "Há muitos jogadores.".
+5. Rejeita o mesmo conn já inscrito na sala.
+6. Registra a inscrição, consome a pista e envia "Entrada registrada.".
+
+**Entrada** nos minutos 0, 20 e 40 (`ProcessSecMinTimer.cpp:1082-1148`):
+
+- Só entram inscrições cujo nome ainda confere, com o líder parado no bloco
+  (25,13) e ainda líder ou solo.
+- O líder é teleportado para `PistaPos[sala][grupo]`, junto com os membros em
+  jogo que estejam no mesmo bloco.
+- Spawn por sala: Lich (5654 para o grupo 1, 5653 para o grupo 2), Torre
+  (5706–5764) e o boss Amon (5789). O Labirinto sorteia `MobCount = 8 + rand()%8`
+  com o RNG MSVC e spawna 5854–5898 para o grupo 1.
+
+**Saída** nos minutos 15, 35 e 55 (`:1150-1429`):
+
+- Remove todos os mobs da caixa x 3310–3588, y 1005–1663.
+- Revive com HP 1 quem estiver morto ali dentro.
+- Teleporta todos para (3294,1701).
+- Limpa as inscrições.
+
+Os timers rodam uma vez por rodada de 20 minutos. Depois de um restart no meio da
+rodada o servidor não refaz a entrada, mas ainda executa a saída. Os blocos -1 da
+pista (`world.IsRuneQuestGenerator`) não spawnam no boot nem entram na fila de
+respawn. A população permanente das salas (blocos com `MinuteGenerate 1`)
+continua no timer de minuto, como no legado.
+
+**Pendente:**
+
+- Contagem de kills (`MobKilled.cpp:2158-2500`) e os chefes que dependem dela.
+- Drops de runa e da próxima pista.
+- Prêmios da Torre e do Sulrang.
+- Portal do Balrog, contador do Coelho e guarda da sala Amon (`_MSG_Action.cpp:178`).
