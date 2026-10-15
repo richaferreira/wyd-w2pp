@@ -88,10 +88,10 @@ func (d *Dispatcher) completeAccountLogin(w *world.World, s *world.Session, out 
 		// It lives for the whole account session and is released on disconnect.
 		cargo := out.Cargo
 		w.SetCargo(out.AccountID, &cargo)
-		// Drain any pending donate web-shop grants (fetched in the same login
-		// round-trip) into the freshly-loaded cargo (issue #34); items land in the
-		// next free slot, or are lost when full. Encode AFTER the drain so the
-		// client vault cache includes freshly delivered items.
+		// Drain pending donate web-shop grants (fetched in the same login
+		// round-trip) into the freshly-loaded cargo (issue #34). Items that do not
+		// fit remain pending for a later login after the player frees cargo space.
+		// Encode AFTER the drain so the client vault cache includes delivered items.
 		w.ApplyDeliveries(s, out.PendingDeliveries)
 		s.Mode = world.UserSelChar
 		coin, cargoItems := d.cargoWire(w.Cargo(out.AccountID))
