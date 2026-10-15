@@ -10,6 +10,7 @@ import (
 // shed (queue full / disconnect). Send/SendTo must ignore it instead of
 // panicking the single world goroutine, which would disconnect every player.
 func TestSendNilSession(t *testing.T) {
+	t.Helper()
 	w := New(Config{}, nil, nil, nil)
 	w.Send(nil, protocol.MsgAction, nil)
 	w.SendTo(nil, protocol.Header{Type: protocol.MsgAction}, nil)
