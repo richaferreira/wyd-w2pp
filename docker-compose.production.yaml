@@ -1,0 +1,30 @@
+# Production hardening overlay for docker-compose.yaml.
+#
+# Requires Docker Compose v2.24.4+ for the !reset tag.
+# Set POSTGRES_PASSWORD in the environment (or an ignored .env file) before
+# starting the stack. Use a long, randomly generated URL-safe password because
+# the current DSN is assembled into a PostgreSQL URL.
+#
+# Example:
+#   export POSTGRES_PASSWORD='replace-with-a-long-random-url-safe-secret'
+#   docker compose -f docker-compose.yaml -f docker-compose.production.yaml config
+#   docker compose -f docker-compose.yaml -f docker-compose.production.yaml up --build -d
+#
+# This overlay does not replace operational hardening: deploy trusted TLS
+# certificates for internal gRPC, restrict firewall rules, configure backups,
+# and validate the deployment before allowing public players.
+services:
+  db:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD antes de iniciar a stack}
+
+  dbserver:
+    environment:
+      W2PP_DB_DSN: postgres://postgres:${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD antes de iniciar a stack}@db:5432/postgres
+
+  webserver:
+    environment:
+      W2PP_DB_DSN: postgres://postgres:${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD antes de iniciar a stack}@db:5432/postgres
+    # The web API is for server-side callers on the private Compose network.
+    # Do not publish its gRPC port directly to the public host.
+    ports: !reset []
