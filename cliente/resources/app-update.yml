@@ -1,0 +1,5 @@
+owner: Jean1dev
+repo: wyd-plataforma
+provider: github
+releaseType: release
+updaterCacheDirName: wyd-launcher-updater
