@@ -30,14 +30,26 @@ const efRange = 27
 
 // Send queues an "about you" S→C message: HEADER.ID is set to the session's own
 // conn and ClientTick is filled in.
+//
+// A nil session is ignored: the loop may shed a client mid-handler (its queue
+// filled, or it disconnected) and later code in the same handler still holds the
+// now-removed session. Dropping the message is correct; panicking the single
+// world goroutine would take every player down.
 func (w *World) Send(s *Session, t protocol.Type, payload []byte) {
+	if s == nil {
+		return
+	}
 	w.enqueue(s, protocol.Header{Type: t, ID: uint16(s.Conn)}, payload)
 }
 
 // SendTo queues an S→C message with a caller-controlled header (notably
 // HEADER.ID = the SOURCE entity for broadcasts, e.g. who moved). ClientTick is
 // filled in.
+// A nil session is ignored (see Send).
 func (w *World) SendTo(s *Session, h protocol.Header, payload []byte) {
+	if s == nil {
+		return
+	}
 	w.enqueue(s, h, payload)
 }
 
