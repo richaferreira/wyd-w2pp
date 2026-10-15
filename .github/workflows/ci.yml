@@ -107,3 +107,23 @@ jobs:
           tags: w2pp-${{ matrix.svc }}:ci
           cache-from: type=gha,scope=${{ matrix.svc }}
           cache-to: type=gha,mode=max,scope=${{ matrix.svc }}
+
+
+  compose-production:
+    name: Production Compose validation
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate hardened Compose configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          export POSTGRES_PASSWORD='ci-only-url-safe-placeholder-secret'
+          docker compose -f docker-compose.yaml -f docker-compose.production.yaml config --format json > /tmp/compose.json
+          jq -e '((.services.webserver.ports // []) | length) == 0' /tmp/compose.json
+          jq -e '.services.db.environment.POSTGRES_PASSWORD == "ci-only-url-safe-placeholder-secret"' /tmp/compose.json
+          if env -u POSTGRES_PASSWORD docker compose -f docker-compose.yaml -f docker-compose.production.yaml config >/dev/null 2>&1; then
+            echo "::error::Production Compose must fail when POSTGRES_PASSWORD is missing"
+            exit 1
+          fi
