@@ -193,6 +193,10 @@ type World struct {
 	mobCount   int
 }
 
+// defaultOutBuffer is the per-session outbound queue depth used when
+// Config.OutBuffer is unset.
+const defaultOutBuffer = 512
+
 // New creates a World with the given dependencies. A nil handler installs a
 // no-op default (Phase 3: transport plumbing only).
 func New(cfg Config, log *slog.Logger, persist Persistence, handler Handler) *World {
@@ -200,7 +204,12 @@ func New(cfg Config, log *slog.Logger, persist Persistence, handler Handler) *Wo
 		cfg.GridDim = DefaultGridDim
 	}
 	if cfg.OutBuffer <= 0 {
-		cfg.OutBuffer = 64
+		// A single loop tick can legitimately queue hundreds of frames for one
+		// session (teleport/login into a crowded area sends one CreateMob per
+		// visible entity) before the writer goroutine gets scheduled. 64 made
+		// healthy clients get shed as "slow"; 512 absorbs those bursts while the
+		// full-queue drop below still protects the loop from a truly stuck socket.
+		cfg.OutBuffer = defaultOutBuffer
 	}
 	if cfg.EventQueue <= 0 {
 		cfg.EventQueue = 1024

@@ -327,6 +327,10 @@ func (d *Dispatcher) runCommand(w *world.World, s *world.Session, name string, a
 		d.createGuild(w, s, args)
 		return true
 	}
+	if cmd == "guild" {
+		d.sendGuildList(w, s)
+		return true
+	}
 	if cmd == "subcreate" {
 		d.subcreate(w, s, args)
 		return true

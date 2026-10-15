@@ -18,9 +18,9 @@
 ✅ /destravar40: destrava o level 40 do celestial (seta o gate `QuestInfo.Celestial.Lv40`; efetivo só para chars Celestial) <br/>
 ✅ /destravar90: destrava o level 90 do celestial (gate `Lv90` + dá a FuryStone item 3502) <br/>
 ✅ /arcana: realiza a quest da cythera arcana (seta `Circle` + põe o item 3507 no Equip[1]) <br/>
-⏳ /create: (nome da guild): cria guild — sistema de guild não modelado <br/>
+✅ /create: (nome da guild): cria guild (também implementados: `/subcreate`, `/handover`, `/summonguild`, `/expulsar`) <br/>
 ✅ /sair: sai da sua guild (limpa a guild + atualiza a tag; metadados de guild não modelados) <br/>
-⏳ /guild: mostra o index (ID) da sua guild — sistema de guild não modelado <br/>
+✅ /guild: lista no painel os membros online da sua guild (nomes separados por espaço, quebrando linha ao atingir 70 caracteres, como o `SendGuildList` legado; silencioso se você não tem guild) <br/>
 ✅ /buffs: Remove todos os buffs do personagem <br/>
 ✅ /cp: mostra os pontos de caos atuais do personagem (`PKPoint-75`; 0 = nick branco). Recuperam de duas formas: +1 por hora online (gate do `RegenMob` legado) e **+1 por nível subido**, ambas com teto no neutro 75 — o ganho por nível é um desvio consciente do legado, pedido na issue #279 <br/>
 ✅ /nick \<jogador\>: mostra nick, guild (nome/fama, se registrada — `world/guild.go`), cidadania e fama do jogador alvo <br/>
