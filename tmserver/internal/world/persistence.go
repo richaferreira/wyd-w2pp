@@ -90,8 +90,8 @@ type CargoSave struct {
 }
 
 // Delivery is one pending grant the loop drains from the delivery_queue mailbox
-// into the account cargo (donate web shop, issue #34). ID is the queue row id,
-// acked once the item is applied (or lost when the cargo is full).
+// into the account cargo (donate web shop, issue #34). ID is the queue row id and
+// is acknowledged only after the item is persisted into cargo.
 type Delivery struct {
 	ID   int64
 	Item Item
