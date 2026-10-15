@@ -361,8 +361,8 @@ type Persistence interface {
 	// delivery_queue mailbox (issue #34). Called off the loop at login.
 	ListPendingDeliveries(ctx context.Context, accountID int64) ([]Delivery, error)
 	// SaveCargoWithDeliveries persists the cargo (replace-all) and marks the
-	// drained mailbox rows delivered/lost in one backend transaction — the anti-dup
-	// boundary for the drain.
+	// delivered mailbox rows in one backend transaction — the anti-dup boundary.
+	// Grants that do not fit in cargo are not acknowledged and remain pending.
 	SaveCargoWithDeliveries(ctx context.Context, save CargoSave, deliveredIDs, lostIDs []int64) error
 	// SetAccountBlocked flips account.is_blocked by name — the write side of the
 	// in-game GM ban/unban command (issue #122). Called off the loop via World.Go.
