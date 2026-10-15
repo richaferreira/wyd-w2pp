@@ -58,6 +58,14 @@ A documentação de evolução descreve uma correção da fila de saída por ses
 4. Testes de carga e métricas.
 5. Evolução de gameplay com testes de regressão por handler e comparação com a referência legada.
 
+### P1 — Entrega de itens com depósito cheio
+
+A auditoria do fluxo `World.ApplyDeliveries` encontrou que os itens da fila `delivery_queue` eram marcados como perdidos quando o depósito da conta estava cheio. Isso poderia descartar permanentemente uma compra da loja ou uma recompensa diária.
+
+**Correção nesta branch:** os itens que não couberem permanecem pendentes para uma próxima tentativa após o jogador liberar espaço. Os IDs entregues continuam sendo confirmados junto com a gravação do depósito em uma transação.
+
+**Risco residual:** o caminho de falha/timeout do salvamento assíncrono precisa de teste dedicado para comprovar que a confirmação da fila e o estado em memória não divergem nem duplicam itens em caso de falha do backend. A correção reduz perda por depósito cheio, mas não é, isoladamente, uma certificação completa de entrega exatamente-uma-vez.
+
 ## Limites desta revisão
 
 A leitura remota de arquivos não executa a aplicação, não confirma comportamento em runtime e não substitui a suíte de testes. Não declarar a instância pronta para produção até que os comandos e os testes acima sejam executados em ambiente controlado.
