@@ -25,6 +25,14 @@ A arquitetura de `tmserver/internal/world` depende de um único proprietário do
 
 **Validação necessária:** testes de concorrência com `-race`, desconexão durante salvamento, falha/timeout de backend e operações concorrentes de inventário/warehouse/trade.
 
+### P1 — Conta simultânea em múltiplas instâncias
+
+O controle de sessão duplicada descrito em `tmserver/internal/handler/login.go` é local ao processo: o comentário do próprio código registra que o dbServer não mantém um registro global de contas online. Portanto, duas instâncias tmServer podem aceitar a mesma conta se ambas estiverem acessíveis.
+
+**Risco:** sessões simultâneas podem sobrescrever personagem/depósito e invalidar as garantias de anti-duplicação entre instâncias.
+
+**Validação e evolução necessárias:** antes de escalar horizontalmente, implementar uma concessão/lease de sessão por conta no backend compartilhado, com expiração e liberação segura em desconexões/crashes, e testes de login concorrente contra duas instâncias. Até lá, operar com uma única instância tmServer por universo/conta e não tratar o bloqueio local como proteção distribuída.
+
 ### P1 — Backups e recuperação
 
 O guia de hospedagem descreve backup manual do PostgreSQL, mas o procedimento precisa ser automatizado e acompanhado de teste de restauração. Um arquivo de backup sem uma restauração ensaiada não comprova capacidade de recuperação.
