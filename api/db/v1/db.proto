@@ -328,8 +328,8 @@ message SaveCargoRequest {
 message SaveCargoResponse { bool ok = 1; }
 
 // Delivery is one pending grant from the delivery_queue mailbox (issue #34). For
-// an item grant, item.slot is unused — the drain assigns the next free cargo slot
-// (or loses the item when the cargo is full).
+// an item grant, item.slot is unused — the tmServer assigns the next free cargo
+// slot and leaves grants pending when the account cargo has no free slot.
 message Delivery {
   int64 id = 1;
   Item item = 2;
