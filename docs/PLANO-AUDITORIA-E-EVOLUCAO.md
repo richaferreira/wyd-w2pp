@@ -70,9 +70,9 @@ A documentação de evolução descreve uma correção da fila de saída por ses
 
 A auditoria do fluxo `World.ApplyDeliveries` encontrou que os itens da fila `delivery_queue` eram marcados como perdidos quando o depósito da conta estava cheio. Isso poderia descartar permanentemente uma compra da loja ou uma recompensa diária.
 
-**Correção nesta branch:** os itens que não couberem permanecem pendentes para uma próxima tentativa após o jogador liberar espaço. Os IDs entregues continuam sendo confirmados junto com a gravação do depósito em uma transação.
+**Correções nesta branch:** os itens que não couberem permanecem pendentes para uma próxima tentativa após o jogador liberar espaço. A entrega agora é montada em uma cópia temporária do depósito; o estado em memória só é publicado e a resposta de login só é enviada depois que o backend confirma a gravação do depósito e dos IDs entregues na mesma transação. Se o salvamento falhar, o login é interrompido em vez de expor itens não confirmados.
 
-**Risco residual:** o caminho de falha/timeout do salvamento assíncrono precisa de teste dedicado para comprovar que a confirmação da fila e o estado em memória não divergem nem duplicam itens em caso de falha do backend. A correção reduz perda por depósito cheio, mas não é, isoladamente, uma certificação completa de entrega exatamente-uma-vez.
+**Risco residual:** a alteração reduz o risco de perda/duplicação no caminho de falha, mas ainda precisa de testes dedicados para sucesso, depósito cheio, erro/timeout do backend, desconexão durante a gravação e repetição de login. Não declarar entrega exatamente-uma-vez certificada até esses cenários serem validados com o backend real.
 
 ## Limites desta revisão
 
