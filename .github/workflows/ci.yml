@@ -83,6 +83,29 @@ jobs:
       - name: Run govulncheck
         run: govulncheck ./...
 
+
+  compose-production:
+    name: Production Compose validation
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Docker Compose
+        run: docker compose version
+
+      - name: Validate production overlay and required secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          export POSTGRES_PASSWORD='ci-only-long-url-safe-secret-123456789'
+          docker compose -f docker-compose.yaml -f docker-compose.production.yaml config --format json > /tmp/compose.json
+          jq -e '.services.webserver.ports == null or (.services.webserver.ports | length == 0)' /tmp/compose.json
+          jq -e '.services.db.environment.POSTGRES_PASSWORD == "ci-only-long-url-safe-secret-123456789"' /tmp/compose.json
+          if env -u POSTGRES_PASSWORD docker compose -f docker-compose.yaml -f docker-compose.production.yaml config >/dev/null 2>&1; then
+            echo "Production overlay unexpectedly accepted missing POSTGRES_PASSWORD" >&2
+            exit 1
+          fi
+
   docker:
     name: Docker build (${{ matrix.svc }})
     runs-on: ubuntu-24.04
