@@ -467,13 +467,12 @@ func (w *World) SetCargo(accountID int64, st *CargoState) {
 	w.cargo[accountID] = st
 }
 
-// ApplyDeliveries places the account's already-fetched pending delivery_queue
-// grants (donate web shop, issue #34) into its cargo. pending is loaded in the
-// same off-loop round-trip as the account login itself (dbclient.AccountLogin),
-// so draining the mailbox costs no extra backend round-trip. Called from the loop
-// right after the cargo is installed at login: places each item in the next free
-// cargo slot (lost when the cargo is full) and persists the cargo + acks the
-// queue rows in one backend transaction, off the loop. Loop-only.
+// ApplyDeliveries places pending delivery_queue grants into the account cargo.
+// pending is loaded alongside account login. If the cargo fills, the current and
+// remaining grants stay pending for a later login after the player frees space;
+// purchased/reward items must never be acknowledged as delivered when not stored.
+// The cargo snapshot and successfully delivered queue IDs are persisted atomically
+// off-loop, so a failed save leaves both cargo and queue unchanged. Loop-only.
 func (w *World) ApplyDeliveries(s *Session, pending []Delivery) {
 	if s == nil || s.AccountID == 0 || len(pending) == 0 {
 		return
@@ -483,23 +482,29 @@ func (w *World) ApplyDeliveries(s *Session, pending []Delivery) {
 	if cargo == nil {
 		return
 	}
-	var deliveredIDs, lostIDs []int64
-	for _, d := range pending {
-		if w.AddToCargo(cargo, d.Item) >= 0 {
-			deliveredIDs = append(deliveredIDs, d.ID)
-		} else {
-			lostIDs = append(lostIDs, d.ID)
+	var deliveredIDs []int64
+	remaining := 0
+	for i, d := range pending {
+		if w.AddToCargo(cargo, d.Item) < 0 {
+			remaining = len(pending) - i
+			break
 		}
+		deliveredIDs = append(deliveredIDs, d.ID)
 	}
-	if len(lostIDs) > 0 {
-		w.log.Warn("donate deliveries lost: cargo full", "account", accountID, "count", len(lostIDs))
+	if remaining > 0 {
+		w.log.Warn("donate deliveries deferred: cargo full", "account", accountID, "count", remaining)
 	}
-	w.log.Info("drained donate deliveries", "account", accountID, "delivered", len(deliveredIDs), "lost", len(lostIDs))
+	w.log.Info("drained donate deliveries", "account", accountID, "delivered", len(deliveredIDs), "deferred", remaining)
 
+	// If no item fit, don't write/ack anything. The queue rows remain pending and
+	// will be retried after cargo space is available.
+	if len(deliveredIDs) == 0 {
+		return
+	}
 	cs := w.cargoSave(accountID)
 	p := w.persist
 	w.Go(s, func() func(*World, *Session) {
-		e := p.SaveCargoWithDeliveries(context.Background(), cs, deliveredIDs, lostIDs)
+		e := p.SaveCargoWithDeliveries(context.Background(), cs, deliveredIDs, nil)
 		return func(w *World, _ *Session) {
 			if e != nil {
 				w.log.Warn("save cargo with deliveries failed", "account", accountID, "err", e)
