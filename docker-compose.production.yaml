@@ -1,0 +1,19 @@
+# Production overlay for docker-compose.yaml.
+# Requires Docker Compose v2.24.4+ for the !reset tag.
+# Use with: docker compose -f docker-compose.yaml -f docker-compose.production.yaml up -d --build
+services:
+  db:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the production environment}
+
+  dbserver:
+    environment:
+      W2PP_DB_DSN: postgres://postgres:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the production environment}@db:5432/postgres
+
+  webserver:
+    environment:
+      W2PP_DB_DSN: postgres://postgres:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the production environment}@db:5432/postgres
+      W2PP_PLAY_CODE_SECRET: ${W2PP_PLAY_CODE_SECRET:-}
+    # The production BFF should access this service over the Compose network.
+    # Do not publish the internal gRPC API directly on the host.
+    ports: !reset []
