@@ -474,44 +474,78 @@ func (w *World) SetCargo(accountID int64, st *CargoState) {
 // right after the cargo is installed at login: places each item in the next free
 // cargo slot (lost when the cargo is full) and persists the cargo + acks the
 // queue rows in one backend transaction, off the loop. Loop-only.
-func (w *World) ApplyDeliveries(s *Session, pending []Delivery) {
-	if s == nil || s.AccountID == 0 || len(pending) == 0 {
+// ApplyDeliveries stages pending grants and publishes them to live cargo only
+// after the cargo snapshot and delivery acknowledgements commit atomically.
+// Grants that do not fit remain pending for a later login. Loop-only.
+func (w *World) ApplyDeliveries(s *Session, pending []Delivery, then func(*World, *Session, error)) {
+	if s == nil || s.AccountID == 0 {
+		return
+	}
+	finish := func(err error) {
+		if then != nil {
+			then(w, s, err)
+		}
+	}
+	if len(pending) == 0 {
+		finish(nil)
 		return
 	}
 	accountID := s.AccountID
-	cargo := w.cargo[accountID]
-	if cargo == nil {
+	current := w.cargo[accountID]
+	if current == nil {
+		finish(nil)
 		return
 	}
-	var deliveredIDs, lostIDs []int64
-	for _, d := range pending {
-		if w.AddToCargo(cargo, d.Item) >= 0 {
-			deliveredIDs = append(deliveredIDs, d.ID)
-		} else {
-			lostIDs = append(lostIDs, d.ID)
-		}
-	}
-	if len(lostIDs) > 0 {
-		w.log.Warn("donate deliveries lost: cargo full", "account", accountID, "count", len(lostIDs))
-	}
-	w.log.Info("drained donate deliveries", "account", accountID, "delivered", len(deliveredIDs), "lost", len(lostIDs))
 
-	cs := w.cargoSave(accountID)
+	staged := *current
+	var deliveredIDs []int64
+	remaining := 0
+	for i, d := range pending {
+		if w.AddToCargo(&staged, d.Item) < 0 {
+			remaining = len(pending) - i
+			break
+		}
+		deliveredIDs = append(deliveredIDs, d.ID)
+	}
+	if remaining > 0 {
+		w.log.Warn("donate deliveries deferred: cargo full", "account", accountID, "count", remaining)
+	}
+	w.log.Info("staged donate deliveries", "account", accountID, "delivered", len(deliveredIDs), "deferred", remaining)
+	if len(deliveredIDs) == 0 {
+		finish(nil)
+		return
+	}
+
+	cs := cargoSaveState(accountID, &staged)
 	p := w.persist
+	s.Mode = UserWaitDB
 	w.Go(s, func() func(*World, *Session) {
-		e := p.SaveCargoWithDeliveries(context.Background(), cs, deliveredIDs, lostIDs)
-		return func(w *World, _ *Session) {
-			if e != nil {
-				w.log.Warn("save cargo with deliveries failed", "account", accountID, "err", e)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		err := p.SaveCargoWithDeliveries(ctx, cs, deliveredIDs, nil)
+		return func(w *World, s *Session) {
+			if s == nil {
+				return
 			}
+			if err != nil {
+				w.log.Warn("save cargo with deliveries failed", "account", accountID, "err", err)
+				finish(err)
+				return
+			}
+			w.SetCargo(accountID, &staged)
+			finish(nil)
 		}
 	})
 }
 
 // cargoSave snapshots an account's warehouse into a CargoSave. Loop-only.
 func (w *World) cargoSave(accountID int64) CargoSave {
+	return cargoSaveState(accountID, w.cargo[accountID])
+}
+
+func cargoSaveState(accountID int64, c *CargoState) CargoSave {
 	cs := CargoSave{AccountID: accountID}
-	if c := w.cargo[accountID]; c != nil {
+	if c != nil {
 		cs.Coin = c.Coin
 		cs.Items = savedItems(c.Items[:])
 	}

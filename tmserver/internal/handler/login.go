@@ -88,15 +88,23 @@ func (d *Dispatcher) completeAccountLogin(w *world.World, s *world.Session, out 
 		// It lives for the whole account session and is released on disconnect.
 		cargo := out.Cargo
 		w.SetCargo(out.AccountID, &cargo)
-		// Drain any pending donate web-shop grants (fetched in the same login
-		// round-trip) into the freshly-loaded cargo (issue #34); items land in the
-		// next free slot, or are lost when full. Encode AFTER the drain so the
-		// client vault cache includes freshly delivered items.
-		w.ApplyDeliveries(s, out.PendingDeliveries)
-		s.Mode = world.UserSelChar
-		coin, cargoItems := d.cargoWire(w.Cargo(out.AccountID))
-		body := protocol.EncodeCNFAccountLoginBody(s.AccountName, d.selCharsFrom(out.Characters), coin, cargoItems)
-		w.SendTo(s, protocol.Header{Type: protocol.MsgCNFAccountLogin, ID: protocol.IDSelChar}, body)
+		// Persist pending grants before exposing the updated cargo to the client.
+		// If persistence fails, fail closed instead of returning uncommitted items.
+		w.ApplyDeliveries(s, out.PendingDeliveries, func(w *world.World, s *world.Session, err error) {
+			if s == nil {
+				return
+			}
+			if err != nil {
+				s.Mode = world.UserAccept
+				d.notify(w, s, NoticeDBError)
+				w.Close(s)
+				return
+			}
+			s.Mode = world.UserSelChar
+			coin, cargoItems := d.cargoWire(w.Cargo(out.AccountID))
+			body := protocol.EncodeCNFAccountLoginBody(s.AccountName, d.selCharsFrom(out.Characters), coin, cargoItems)
+			w.SendTo(s, protocol.Header{Type: protocol.MsgCNFAccountLogin, ID: protocol.IDSelChar}, body)
+		})
 	case world.LoginBadPassword:
 		d.fails[s.AccountName]++
 		d.log.Warn("account login: bad password", "conn", s.Conn, "account", s.AccountName, "fails", d.fails[s.AccountName])
